@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-30" version="21.0.0">
+  <diagram name="rewrite-wrapper アーキテクチャ" id="architecture">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- タイトル / Title -->
+        <mxCell id="title" value="rewrite-wrapper アーキテクチャ図" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="20" width="500" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- クライアント / Client -->
+        <mxCell id="client" value="クライアント&#xa;Client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="80" y="360" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- nginx -->
+        <mxCell id="nginx" value="nginx&#xa;(リバースプロキシ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="260" y="360" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- rewrite-wrapper (Hono) -->
+        <mxCell id="wrapper" value="rewrite-wrapper&#xa;Bun + Hono&#xa;:3000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="340" width="160" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- llama.cpp -->
+        <mxCell id="llamacpp" value="llama.cpp server&#xa;Qwen3.5-4B&#xa;:8080" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="360" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- MongoDB -->
+        <mxCell id="mongodb" value="MongoDB&#xa;k9db&#xa;:27017" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="460" y="520" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ── ミドルウェア詳細ボックス / Middleware detail box ── -->
+        <mxCell id="mw_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffde7;strokeColor=#d6b656;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="180" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_title" value="ミドルウェアチェーン" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="185" width="180" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="mw1" value="① authMiddleware&#xa;(APIキー認証 + LRUキャッシュ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f9a825;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="455" y="210" width="175" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="mw2" value="② slotGuardMiddleware&#xa;(スロット確認 /slots)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f9a825;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="455" y="255" width="175" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- ── 矢印 / Arrows ── -->
+        <!-- クライアント → nginx -->
+        <mxCell id="arrow1" value="HTTPS/HTTP&#xa;POST /v1/chat/completions" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="client" target="nginx" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- nginx → wrapper -->
+        <mxCell id="arrow2" value="HTTP&#xa;Reverse Proxy" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="nginx" target="wrapper" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- wrapper → llamacpp (SSE) -->
+        <mxCell id="arrow3" value="SSEストリーム転送&#xa;(api_key除去済み)" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="wrapper" target="llamacpp" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- wrapper → mongodb (auth lookup) -->
+        <mxCell id="arrow4" value="APIキー照合&#xa;completion_logs書き込み" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" source="wrapper" target="mongodb" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- wrapper → llamacpp (slot check) -->
+        <mxCell id="arrow5" value="GET /slots?fail_on_no_slot=1" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;entryX=0;entryY=0;entryDx=0;entryDy=0;" edge="1" source="wrapper" target="llamacpp" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="300" />
+              <mxPoint x="780" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- レスポンス矢印 (ストリーム) / Response arrow (stream) -->
+        <mxCell id="arrow6" value="SSEストリーム&#xa;(透過転送)" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#0099cc;" edge="1" source="llamacpp" target="nginx" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="870" y="470" />
+              <mxPoint x="330" y="470" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 凡例 / Legend -->
+        <mxCell id="legend" value="凡例 / Legend&#xa;━━ リクエスト / Request&#xa;━━ (青) レスポンス / Response&#xa;- - スロット確認 / Slot check" style="text;html=1;strokeColor=#666666;fillColor=#f5f5f5;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="880" y="500" width="200" height="80" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

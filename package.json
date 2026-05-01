@@ -1,0 +1,22 @@
+{
+  "name": "rewrite-wrapper",
+  "module": "apps/server/src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run apps/server/src/index.ts",
+    "dev": "bun --watch run apps/server/src/index.ts",
+    "test": "bun test"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "hono": "^4.12.16",
+    "lru-cache": "^11.3.5",
+    "mongodb": "^7.2.0"
+  }
+}

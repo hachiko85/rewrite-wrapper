@@ -1,0 +1,60 @@
+# nginx.conf.example
+# nginx リバースプロキシ設定テンプレート / nginx reverse proxy configuration template
+#
+# このファイルは rewrite-wrapper サーバーへリバースプロキシするための
+# nginx 設定テンプレートです。実際の環境に合わせて変更してください。
+#
+# This file is an nginx configuration template for reverse proxying
+# to the rewrite-wrapper server. Modify it for your environment.
+
+upstream llm_wrapper {
+    # rewrite-wrapper サーバー / rewrite-wrapper server
+    server 127.0.0.1:3000;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name your-domain.example.com;
+
+    # ── SSE (Server-Sent Events) 設定 / SSE settings ──
+    # バッファリングを無効化してストリームをリアルタイムで転送する
+    # Disable buffering to forward streams in real-time
+    proxy_buffering off;
+    proxy_cache off;
+
+    location / {
+        proxy_pass http://llm_wrapper;
+        proxy_http_version 1.1;
+
+        # ── ヘッダー設定 / Header settings ──
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+
+        # ── SSE 用タイムアウト設定 / SSE timeout settings ──
+        # LLMの生成が長時間かかる場合に備えてタイムアウトを延長する
+        # Extend timeouts for long-running LLM generations
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 300s;
+
+        # ── SSE バッファリング無効化 / Disable SSE buffering ──
+        proxy_buffering off;
+        proxy_cache off;
+        add_header X-Accel-Buffering no;
+    }
+}
+
+# HTTPS設定例 / HTTPS configuration example
+# server {
+#     listen 443 ssl;
+#     server_name your-domain.example.com;
+#
+#     ssl_certificate /path/to/fullchain.pem;
+#     ssl_certificate_key /path/to/privkey.pem;
+#
+#     # ... 上記と同じlocationブロック / Same location block as above
+# }
