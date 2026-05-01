@@ -1,0 +1,43 @@
+# docker/docker-compose.dev.yml
+# 対話モード / Interactive development mode
+#
+# 使い方 / Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm wrapper
+#   または省略形 / or shorthand:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm wrapper bash
+#
+# コンテナ内でできること / What you can do inside:
+#   # llama.cpp 手動起動 (フォアグラウンド)
+#   bash /app/docker/scripts/llama-cpp-run.sh
+#
+#   # llama.cpp バックグラウンド起動
+#   bash /app/docker/scripts/llama-cpp-run.sh --background
+#
+#   # ラッパーサーバー手動起動
+#   cd /app && bun run start
+#
+#   # GPU 確認
+#   nvidia-smi
+#
+#   # モデルファイル一覧
+#   find /models -name "*.gguf"
+
+services:
+  wrapper:
+    # コマンドをインタラクティブシェルに上書き / Override command to interactive shell
+    command: /bin/bash
+    stdin_open: true   # docker run -i に相当
+    tty: true          # docker run -t に相当
+
+    # ソースコードをライブマウント (ホスト編集がコンテナに即反映)
+    # Mount source code live (host edits reflect immediately)
+    volumes:
+      - ${MODELS_DIR:-$HOME/gguf_models}:/models:ro
+      - wrapper-logs:/app/logs
+      - ../apps:/app/apps           # サーバーソース / Server source
+      - ../shared:/app/shared       # 共有型定義 / Shared types
+      - ../tasks:/app/tasks         # タスク管理 / Task files
+      - ../.env:/app/.env:ro        # 環境変数ファイル / Env file
+
+    # 開発時は自動再起動しない / No auto-restart in dev
+    restart: "no"

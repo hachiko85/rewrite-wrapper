@@ -1,0 +1,108 @@
+# docker/docker-compose.yml
+# 本番起動用 / Production mode
+#
+# 使い方 / Usage:
+#   cd docker
+#   docker compose up           # ビルド + 起動
+#   docker compose up -d        # バックグラウンド起動
+#   docker compose down         # 停止・削除
+#   docker compose logs -f      # ログ確認
+#
+# 対話モードで入りたい場合 / For interactive mode:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm wrapper
+
+services:
+  # ── ラッパーサーバー (llama.cpp 内包) / Wrapper server (includes llama.cpp) ──
+  wrapper:
+    build:
+      context: ..                        # プロジェクトルートをビルドコンテキストに
+      dockerfile: docker/Dockerfile      # Dockerfile の場所
+      args:
+        LLAMA_CPP_REF: master            # llama.cpp ブランチ/タグ (例: b5456)
+    image: rewrite-wrapper:latest
+    container_name: rewrite-wrapper
+
+    # ── GPU パススルー / GPU passthrough ──
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # ── 環境変数 / Environment variables ──
+    # プロジェクトルートの .env を参照 / Use project root .env
+    env_file:
+      - ../.env
+    environment:
+      # モデル設定 / Model settings
+      MODEL_FILE: ${MODEL_FILE:-Qwen3.5-4B-GGUF/Qwen3.5-4B-UD-Q4_K_XL.gguf}
+      N_PARALLEL: ${N_PARALLEL:-4}
+      CTX_SIZE: ${CTX_SIZE:-8192}
+      N_GPU_LAYERS: ${N_GPU_LAYERS:--1}
+      LLAMA_PORT: ${LLAMA_PORT:-8080}
+      N_PREDICT: ${N_PREDICT:-512}
+      # MongoDB はコンテナ名で参照 / Reference MongoDB by service name
+      MONGO_URI: ${MONGO_URI:-mongodb://mongodb:27017/k9db}
+
+    # ── ボリュームマウント / Volume mounts ──
+    volumes:
+      # モデルファイル (読み取り専用) / Model files (read-only)
+      # MODELS_DIR 環境変数で変更可 / Override via MODELS_DIR env var
+      - ${MODELS_DIR:-$HOME/gguf_models}:/models:ro
+      # ログ永続化 / Persistent logs
+      - wrapper-logs:/app/logs
+
+    # ── ポート公開 / Expose ports ──
+    ports:
+      - "${WRAPPER_PORT:-3000}:3000"     # Bun ラッパー / Bun wrapper
+
+    # ── 本番起動コマンド / Production startup command ──
+    command: /app/docker/scripts/start.sh
+
+    # ── MongoDB の起動を待つ / Wait for MongoDB ──
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+    networks:
+      - llm-net
+
+    restart: unless-stopped
+
+  # ── MongoDB ──
+  mongodb:
+    image: mongo:7
+    container_name: rewrite-mongodb
+
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-k9db}
+
+    volumes:
+      # データ永続化 / Persistent data
+      - mongodb-data:/data/db
+
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - llm-net
+
+    restart: unless-stopped
+
+# ── 名前付きボリューム / Named volumes ──
+volumes:
+  mongodb-data:
+    driver: local
+  wrapper-logs:
+    driver: local
+
+# ── ネットワーク / Networks ──
+networks:
+  llm-net:
+    driver: bridge

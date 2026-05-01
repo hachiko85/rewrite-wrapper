@@ -1,0 +1,45 @@
+# .dockerignore
+# ビルドコンテキストから除外するファイル / Files excluded from Docker build context
+
+# Git
+.git
+.gitignore
+
+# 依存パッケージ / Dependencies
+node_modules
+.bun
+
+# 環境変数ファイル (実行時にマウント) / Env files (mounted at runtime)
+.env
+.env.*
+!.env.example
+
+# ビルド出力 / Build artifacts
+dist
+out
+*.tgz
+
+# ログ / Logs
+logs
+*.log
+
+# キャッシュ / Caches
+.cache
+.eslintcache
+*.tsbuildinfo
+
+# エディタ設定 / Editor config
+.idea
+.vscode
+
+# OS
+.DS_Store
+
+# モデルファイル (マウントで提供) / Model files (provided via mount)
+*.gguf
+*.ggml
+models/
+
+# テスト結果 / Test results
+coverage
+*.lcov
