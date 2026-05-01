@@ -1,21 +1,20 @@
 #!/bin/bash
-# llama-server 起動スクリプト (Qwen3.5-4B, 非思考モード)
-# Startup script for Qwen3.5-4B LLM server with thinking suppressed
+# llama-server 起動スクリプト (Qwen3.5-0.8B, 非思考モード)
+# Startup script for Qwen3.5-0.8B LLM server with thinking suppressed
 
 # =============================
 # 設定 / Configuration
 # =============================
 CMD="$HOME/llama.cpp/build/bin/llama-server"
-MODEL_PATH="$HOME/gguf_models/Qwen3.5-4B-GGUF/Qwen3.5-4B-UD-Q4_K_XL.gguf"
+MODEL_PATH="$HOME/gguf_models/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-UD-Q4_K_XL.gguf"
 HOST="localhost"
-PORT=8081
+PORT=8082
 CTX_SIZE=8192
 N_PREDICT=512
 N_GPU_LAYERS=-1
 THREADS=8
 BATCH_SIZE=512
 # 同時推論スロット数 / Number of parallel inference slots
-# スロット数に応じてCTX_SIZEが分割される (例: 8192 / 4 = 2048 per slot)
 N_PARALLEL=4
 
 # Qwen3 非思考モード設定 / Qwen3 non-thinking mode
@@ -37,7 +36,7 @@ fi
 # =============================
 # 起動処理 / Startup
 # =============================
-echo "[llama-server] Starting Qwen3.5-4B (non-thinking mode):"
+echo "[llama-server] Starting Qwen3.5-0.8B (non-thinking mode):"
 echo "  Model     : $MODEL_PATH"
 echo "  Port      : $PORT"
 echo "  GPU Layers: $N_GPU_LAYERS"

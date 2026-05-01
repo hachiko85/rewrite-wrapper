@@ -1,0 +1,20 @@
+# backends.yaml
+# プロキシバックエンド設定ファイル / Proxy backend configuration
+#
+# パスプレフィックスでリクエストを各 llama.cpp サーバーへルーティングする。
+# Routes requests to each llama.cpp server based on URL path prefix.
+#
+# リクエスト例 / Request examples:
+#   POST /qwen3.5-4b/v1/chat/completions  → http://localhost:8081
+#   POST /qwen3.5-0.8b/v1/chat/completions → http://localhost:8082
+
+backends:
+  - name: qwen3.5-4b
+    url: http://localhost:8081
+    pathPrefix: /qwen3.5-4b
+    description: Qwen3.5-4B (UD-Q4_K_XL) — 4並列スロット
+
+  - name: qwen3.5-0.8b
+    url: http://localhost:8082
+    pathPrefix: /qwen3.5-0.8b
+    description: Qwen3.5-0.8B (UD-Q4_K_XL) — 4並列スロット

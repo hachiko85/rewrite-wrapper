@@ -25,9 +25,9 @@ export class AppConfig {
   /** 完了ログコレクション名 / Completion logs collection name */
   readonly mongoLogsCollection: string;
 
-  // ─── LLM Upstream ──────────────────────────
-  /** llama.cpp サーバーのベースURL / Base URL of the llama.cpp server */
-  readonly llamaCppUrl: string;
+  // ─── Backends ─────────────────────────────
+  /** バックエンド設定ファイルのパス / Path to backends configuration file */
+  readonly backendsConfigPath: string;
 
   // ─── Server ────────────────────────────────
   /** ラッパーサーバーのリスンポート / Port the wrapper server listens on */
@@ -56,7 +56,7 @@ export class AppConfig {
     this.mongoCollection = process.env["MONGO_COLLECTION"] ?? "api_keys";
     this.mongoLogsCollection = process.env["MONGO_LOGS_COLLECTION"] ?? "completion_logs";
 
-    this.llamaCppUrl = process.env["LLAMA_CPP_URL"] ?? "http://localhost:8080";
+    this.backendsConfigPath = process.env["BACKENDS_CONFIG"] ?? "./backends.yaml";
 
     this.port = parseInt(process.env["PORT"] ?? "3000", 10);
     this.masterKey = masterKey;

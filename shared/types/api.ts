@@ -83,6 +83,25 @@ export interface CompletionLogInput {
 }
 
 // ─────────────────────────────────────────────
+// バックエンド設定 / Backend configuration
+// ─────────────────────────────────────────────
+
+/**
+ * backends.yaml に記述する1バックエンドの設定型。
+ * Configuration type for a single backend entry in backends.yaml.
+ */
+export interface BackendConfig {
+  /** バックエンド識別名 / Backend identifier (e.g. "qwen3.5-4b") */
+  name: string;
+  /** llama.cpp サーバーのベースURL / llama.cpp server base URL */
+  url: string;
+  /** このバックエンドに対応するURLパスプレフィックス / URL path prefix for this backend */
+  pathPrefix: string;
+  /** 説明 (任意) / Description (optional) */
+  description?: string;
+}
+
+// ─────────────────────────────────────────────
 // エラーレスポンス / Error response
 // ─────────────────────────────────────────────
 

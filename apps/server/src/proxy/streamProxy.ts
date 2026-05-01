@@ -12,7 +12,6 @@
  */
 
 import type { Context } from "hono";
-import { AppConfig } from "../config.js";
 import { CompletionLogger } from "../services/completionLogger.js";
 import { Errors } from "../utils/errorResponse.js";
 import type { ApiKeyDocument } from "../../../../shared/types/api.js";
@@ -22,22 +21,21 @@ import type { ApiKeyDocument } from "../../../../shared/types/api.js";
  * Class that proxies SSE streams from llama.cpp to the client.
  */
 export class StreamProxy {
-  private config: AppConfig;
   private logger: CompletionLogger;
 
   constructor() {
-    this.config = AppConfig.getInstance();
     this.logger = CompletionLogger.getInstance();
   }
 
   /**
-   * llama.cpp への転送パスを解決する。
-   * Resolves the forwarding path to llama.cpp.
+   * バックエンドURLとパスから転送先URLを組み立てる。
+   * Builds the upstream URL from backend base URL and path.
    *
-   * 例: /v1/chat/completions → http://localhost:8080/v1/chat/completions
+   * 例: ("http://localhost:8081", "/v1/chat/completions")
+   *   → "http://localhost:8081/v1/chat/completions"
    */
-  private resolveUpstreamUrl(path: string): string {
-    return `${this.config.llamaCppUrl}${path}`;
+  private resolveUpstreamUrl(backendUrl: string, path: string): string {
+    return `${backendUrl}${path}`;
   }
 
   /**
@@ -87,8 +85,11 @@ export class StreamProxy {
    * data: [DONE] を検知してCompletionLoggerを起動する。
    * Triggers CompletionLogger upon detecting data: [DONE].
    */
-  async forward(c: Context, path: string, apiKeyDoc: ApiKeyDocument): Promise<Response> {
-    const upstreamUrl = this.resolveUpstreamUrl(path);
+  /**
+   * @param backendUrl 転送先バックエンドのベースURL / Backend base URL to forward to
+   */
+  async forward(c: Context, path: string, apiKeyDoc: ApiKeyDocument, backendUrl: string): Promise<Response> {
+    const upstreamUrl = this.resolveUpstreamUrl(backendUrl, path);
     const startTime = Date.now();
 
     // ── リクエストボディの取得と api_key 除去 / Read body and strip api_key ──

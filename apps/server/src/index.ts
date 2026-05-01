@@ -11,6 +11,7 @@ import { AppConfig } from "./config.js";
 import { MongoDbClient } from "./services/mongodb.js";
 import { ApiKeyService } from "./services/apiKeyService.js";
 import { CompletionLogger } from "./services/completionLogger.js";
+import { BackendRegistry } from "./services/backendRegistry.js";
 import { buildProxyRouter } from "./routes/proxy.js";
 import { buildAdminRouter } from "./routes/admin.js";
 import { Errors } from "./utils/errorResponse.js";
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
   // ── サービス初期化 / Initialize services ──
   await ApiKeyService.getInstance().init();
   await CompletionLogger.getInstance().init();
+  await BackendRegistry.getInstance().init(config.backendsConfigPath);
 
   console.log("[Server] Services initialized.");
 
@@ -40,9 +42,14 @@ async function main(): Promise<void> {
   app.get("/health", (c) =>
     c.json({
       status: "ok",
-      upstream: config.llamaCppUrl,
+      backends: BackendRegistry.getInstance().list().map((b) => b.name),
       timestamp: new Date().toISOString(),
     })
+  );
+
+  // バックエンド一覧 / List registered backends
+  app.get("/backends", (c) =>
+    c.json({ backends: BackendRegistry.getInstance().list() })
   );
 
   // 管理ルートを先に登録してプロキシ認証ミドルウェアに流れないようにする /
@@ -63,7 +70,7 @@ async function main(): Promise<void> {
 
   // ── サーバー起動 / Start server ──
   console.log(`[Server] Starting on port ${config.port}...`);
-  console.log(`[Server] Upstream: ${config.llamaCppUrl}`);
+  console.log(`[Server] Backends config: ${config.backendsConfigPath}`);
 
   Bun.serve({
     port: config.port,
