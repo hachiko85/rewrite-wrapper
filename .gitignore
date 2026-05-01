@@ -36,3 +36,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # temp / test outputs
 /tmp/
+
+# Beta test generated files
+beta-test/curl/.api_key

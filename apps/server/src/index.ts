@@ -52,6 +52,19 @@ async function main(): Promise<void> {
     c.json({ backends: BackendRegistry.getInstance().list() })
   );
 
+  // β テスト UI (開発用) / Beta test web UI (development)
+  // beta-test/web/index.html をプロジェクトルートからの相対パスで提供する。
+  // Serves beta-test/web/index.html relative to the project root (CWD).
+  app.get("/beta-test", async (c) => {
+    const file = Bun.file("./beta-test/web/index.html");
+    if (!(await file.exists())) {
+      return c.text("beta-test/web/index.html not found. Run server from project root.", 404);
+    }
+    return new Response(file, {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  });
+
   // 管理ルートを先に登録してプロキシ認証ミドルウェアに流れないようにする /
   // Register admin routes first to prevent proxy auth middleware from intercepting them
   app.route("/admin", buildAdminRouter());

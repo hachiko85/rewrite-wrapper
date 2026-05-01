@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rewrite-wrapper β</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --dim: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    .container { max-width: 860px; margin: 0 auto; padding: 28px 20px; }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { font-size: 18px; font-weight: 600; }
+    .badge {
+      background: var(--accent);
+      color: #000;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+    }
+    .health-indicator {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--dim);
+      cursor: pointer;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--dim);
+      transition: background 0.3s;
+    }
+    .dot.ok { background: var(--green); }
+    .dot.err { background: var(--red); }
+    .dot.checking { background: var(--yellow); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── Sections ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .card-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 14px;
+    }
+
+    /* ── Form rows ── */
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .row:last-child { margin-bottom: 0; }
+    .label {
+      width: 86px;
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--dim);
+    }
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 10px;
+      font-size: 13px;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 10px;
+      font-size: 13px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 90px;
+      line-height: 1.5;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Buttons ── */
+    button {
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) { opacity: 0.82; }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #000; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--dim);
+      border: 1px solid var(--border);
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    /* ── Checkbox toggle ── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .toggle-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--dim);
+      cursor: pointer;
+    }
+    input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; accent-color: var(--accent); }
+
+    /* ── Output area ── */
+    .output-wrap { position: relative; }
+    .output {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      min-height: 160px;
+      max-height: 420px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text);
+    }
+    .output.empty { color: var(--dim); font-style: italic; }
+    .output::-webkit-scrollbar { width: 6px; }
+    .output::-webkit-scrollbar-track { background: transparent; }
+    .output::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Error box ── */
+    .error-box {
+      display: none;
+      background: rgba(248,81,73,0.08);
+      border: 1px solid rgba(248,81,73,0.4);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--red);
+      font-family: monospace;
+    }
+
+    /* ── Status badge ── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .status-badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(139,148,158,0.12);
+      color: var(--dim);
+    }
+    .status-badge.running { background: rgba(210,153,34,0.12); color: var(--yellow); }
+    .status-badge.done    { background: rgba(63,185,80,0.12);  color: var(--green); }
+    .status-badge.error   { background: rgba(248,81,73,0.12);  color: var(--red); }
+
+    /* ── Stats ── */
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--dim);
+    }
+    .stats strong { color: var(--text); font-weight: 600; }
+
+    /* ── Divider ── */
+    hr { border: none; border-top: 1px solid var(--border); margin: 6px 0; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <h1>rewrite-wrapper <span class="badge">β</span></h1>
+    <div class="health-indicator" onclick="checkHealth()" title="クリックして再確認">
+      <div class="dot checking" id="health-dot"></div>
+      <span id="health-text">確認中...</span>
+    </div>
+  </header>
+
+  <!-- 設定 -->
+  <div class="card">
+    <div class="card-title">設定 / Config</div>
+
+    <div class="row">
+      <span class="label">API Key</span>
+      <input id="apiKey" type="password" placeholder="sk-xxxx" autocomplete="off">
+      <button class="btn-ghost" onclick="saveKey(this)">保存</button>
+    </div>
+
+    <div class="row">
+      <span class="label">Backend</span>
+      <select id="backend"></select>
+      <button class="btn-ghost" onclick="loadBackends()" title="バックエンド一覧を再取得">↺</button>
+    </div>
+
+    <div class="row">
+      <span class="label">Max tokens</span>
+      <input id="maxTokens" type="number" value="256" min="1" max="4096" style="max-width:100px">
+      <div class="toggle-row" style="flex:1; margin-left:8px;">
+        <label class="toggle-item">
+          <input type="checkbox" id="streamMode" checked>
+          ストリーム
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- メッセージ -->
+  <div class="card">
+    <div class="card-title">メッセージ / Message</div>
+    <textarea id="message" placeholder="メッセージを入力... (Ctrl+Enter で送信)"></textarea>
+    <div class="btn-row">
+      <button class="btn-primary" id="sendBtn" onclick="send()">送信 ▶</button>
+      <button class="btn-ghost" onclick="clearAll()">クリア</button>
+    </div>
+  </div>
+
+  <!-- レスポンス -->
+  <div class="card">
+    <div class="card-title">レスポンス / Response</div>
+    <div class="status-row">
+      <span class="status-badge" id="statusBadge">待機中</span>
+      <span style="font-size:12px; color:var(--dim)" id="backendLabel"></span>
+    </div>
+    <div class="output-wrap">
+      <div class="output empty" id="output">レスポンスがここに表示されます</div>
+    </div>
+    <div class="error-box" id="errorBox"></div>
+    <div class="stats">
+      <span>レイテンシ: <strong id="latency">--</strong></span>
+      <span>文字数: <strong id="charCount">--</strong></span>
+      <span>モード: <strong id="modeLabel">--</strong></span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const STORAGE_KEY = 'rw_api_key';
+  let _startTime = 0;
+  let _chars = 0;
+
+  // ── 初期化 ──────────────────────────────────────
+  window.addEventListener('load', () => {
+    document.getElementById('apiKey').value = localStorage.getItem(STORAGE_KEY) || '';
+    loadBackends();
+    checkHealth();
+    document.getElementById('message').addEventListener('keydown', e => {
+      if (e.ctrlKey && e.key === 'Enter') send();
+    });
+  });
+
+  // ── APIキー保存 ──────────────────────────────────
+  function saveKey(btn) {
+    const v = document.getElementById('apiKey').value.trim();
+    localStorage.setItem(STORAGE_KEY, v);
+    const orig = btn.textContent;
+    btn.textContent = '✓ 保存済み';
+    setTimeout(() => { btn.textContent = orig; }, 1400);
+  }
+
+  // ── ヘルスチェック ───────────────────────────────
+  async function checkHealth() {
+    const dot  = document.getElementById('health-dot');
+    const text = document.getElementById('health-text');
+    dot.className = 'dot checking';
+    text.textContent = '確認中...';
+    try {
+      const res = await fetch('/health');
+      const data = await res.json();
+      dot.className = 'dot ok';
+      const names = (data.backends || []).join(', ') || '(なし)';
+      text.textContent = `OK — ${names}`;
+    } catch {
+      dot.className = 'dot err';
+      text.textContent = 'サーバー未接続';
+    }
+  }
+
+  // ── バックエンド一覧取得 ─────────────────────────
+  async function loadBackends() {
+    const sel = document.getElementById('backend');
+    try {
+      const res  = await fetch('/backends');
+      const data = await res.json();
+      const list = data.backends || [];
+      sel.innerHTML = '';
+      if (list.length === 0) {
+        sel.innerHTML = '<option value="">バックエンドなし</option>';
+        return;
+      }
+      list.forEach(b => {
+        const o = document.createElement('option');
+        o.value = b.name;
+        o.textContent = `${b.name}  (${b.url})`;
+        if (b.description) o.title = b.description;
+        sel.appendChild(o);
+      });
+    } catch {
+      sel.innerHTML = '<option value="qwen3.5-4b">qwen3.5-4b (fallback)</option>';
+    }
+  }
+
+  // ── ステータス更新 ───────────────────────────────
+  function setStatus(cls, label) {
+    const el = document.getElementById('statusBadge');
+    el.className = `status-badge ${cls}`;
+    el.textContent = label;
+  }
+
+  // ── 出力追加 ─────────────────────────────────────
+  function appendText(text) {
+    const el = document.getElementById('output');
+    if (el.classList.contains('empty')) {
+      el.classList.remove('empty');
+      el.textContent = '';
+    }
+    el.textContent += text;
+    _chars += text.length;
+    el.scrollTop = el.scrollHeight;
+    document.getElementById('charCount').textContent = `${_chars}`;
+  }
+
+  function showError(err) {
+    const box = document.getElementById('errorBox');
+    const code = err?.error?.code ?? '?';
+    const type = err?.error?.type ?? 'error';
+    const msg  = err?.error?.message ?? JSON.stringify(err, null, 2);
+    box.textContent = `[HTTP ${code}] ${type}\n${msg}`;
+    box.style.display = 'block';
+  }
+
+  function clearAll() {
+    const out = document.getElementById('output');
+    out.classList.add('empty');
+    out.textContent = 'レスポンスがここに表示されます';
+    document.getElementById('errorBox').style.display = 'none';
+    document.getElementById('latency').textContent = '--';
+    document.getElementById('charCount').textContent = '--';
+    document.getElementById('modeLabel').textContent = '--';
+    document.getElementById('backendLabel').textContent = '';
+    setStatus('', '待機中');
+    _chars = 0;
+  }
+
+  function finalize() {
+    const ms = Date.now() - _startTime;
+    document.getElementById('latency').textContent = `${ms} ms`;
+    setStatus('done', '完了');
+  }
+
+  // ── 送信 ────────────────────────────────────────
+  async function send() {
+    const apiKey   = document.getElementById('apiKey').value.trim();
+    const message  = document.getElementById('message').value.trim();
+    const backend  = document.getElementById('backend').value;
+    const stream   = document.getElementById('streamMode').checked;
+    const n_predict = parseInt(document.getElementById('maxTokens').value) || 256;
+
+    if (!apiKey)  { alert('APIキーを入力してください'); return; }
+    if (!message) { alert('メッセージを入力してください'); return; }
+    if (!backend) { alert('バックエンドを選択してください'); return; }
+
+    clearAll();
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('backendLabel').textContent = `→ ${backend}`;
+    document.getElementById('modeLabel').textContent = stream ? 'stream' : 'non-stream';
+    setStatus('running', '生成中...');
+    _startTime = Date.now();
+    _chars = 0;
+
+    const url  = `/${backend}/v1/chat/completions`;
+    const body = {
+      messages: [{ role: 'user', content: message }],
+      stream,
+      n_predict,
+    };
+
+    try {
+      if (stream) {
+        await sendStream(url, apiKey, body);
+      } else {
+        await sendNoStream(url, apiKey, body);
+      }
+    } catch (err) {
+      setStatus('error', 'エラー');
+      showError(err);
+    } finally {
+      document.getElementById('sendBtn').disabled = false;
+    }
+  }
+
+  // ── ストリーム送信 ───────────────────────────────
+  async function sendStream(url, apiKey, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      throw await res.json().catch(() => ({
+        error: { code: res.status, message: 'Failed to parse error', type: 'server_error' },
+      }));
+    }
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // 部分チャンクのバッファリング / Buffer partial chunks
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') { finalize(); return; }
+        try {
+          const chunk = JSON.parse(data);
+          if (chunk.error) throw chunk;
+          const content = chunk.choices?.[0]?.delta?.content ?? '';
+          if (content) appendText(content);
+        } catch (e) {
+          if (e?.error) throw e;
+        }
+      }
+    }
+    finalize();
+  }
+
+  // ── ノンストリーム送信 ───────────────────────────
+  async function sendNoStream(url, apiKey, body) {
+    const res  = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw data;
+
+    const content = data.choices?.[0]?.message?.content
+      ?? JSON.stringify(data, null, 2);
+    appendText(content);
+    finalize();
+  }
+</script>
+</body>
+</html>
