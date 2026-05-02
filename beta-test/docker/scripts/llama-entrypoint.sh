@@ -4,7 +4,15 @@
 # Entrypoint that starts llama-server inside a Docker container.
 #
 # 環境変数 / Environment variables:
-#   MODEL_FILE   - /models/ 以下のモデルパス (例: Qwen3.5-4B-GGUF/Qwen3.5-4B-UD-Q4_K_XL.gguf)
+#   MODEL_FILE   - /models/ 以下のモデルパス (MODELS_DIR からの相対パス)
+#                  例: "Qwen3.5-4B-GGUF/Qwen3.5-4B-UD-Q4_K_XL.gguf"
+#                  例: "unsloth/Qwen3.5-4B.gguf"  (サブディレクトリ対応)
+#                  Path relative to /models/ (= MODELS_DIR on host)
+#   MMPROJ_FILE  - [オプション] mmproj ファイルパス (マルチモーダル/画像認識用)
+#                  [Optional] mmproj file path for multimodal / vision models
+#                  例: "clip/mmproj-bf16.gguf"
+#                  未設定の場合はテキストのみモードで起動する。
+#                  If unset, starts in text-only mode.
 #   LLAMA_PORT   - llama-server のリスンポート (default: 8080)
 #   N_PARALLEL   - 同時スロット数 (default: 4)
 #   CTX_SIZE     - コンテキストサイズ (default: 8192)
@@ -15,6 +23,7 @@ set -euo pipefail
 
 LLAMA_BIN="/opt/llama/bin/llama-server"
 MODEL_PATH="/models/${MODEL_FILE:?MODEL_FILE env var is required}"
+MMPROJ_FILE="${MMPROJ_FILE:-}"
 LLAMA_PORT="${LLAMA_PORT:-8080}"
 N_PARALLEL="${N_PARALLEL:-4}"
 CTX_SIZE="${CTX_SIZE:-8192}"
@@ -29,40 +38,62 @@ echo "  Port      : $LLAMA_PORT"
 echo "  Slots     : $N_PARALLEL"
 echo "  Ctx Size  : $CTX_SIZE"
 echo "  GPU Layers: $N_GPU_LAYERS"
+
+# mmproj オプションのビルド / Build mmproj args (optional)
+MMPROJ_ARGS=()
+if [[ -n "$MMPROJ_FILE" ]]; then
+    MMPROJ_PATH="/models/${MMPROJ_FILE}"
+    echo "  Mmproj    : $MMPROJ_PATH"
+    # mmproj ファイルの存在確認 / Verify mmproj file exists
+    if [[ ! -f "$MMPROJ_PATH" ]]; then
+        echo ""
+        echo "[ERROR] mmproj ファイルが見つかりません / mmproj file not found:"
+        echo "  $MMPROJ_PATH"
+        echo ""
+        echo "  MODELS_DIR と MMPROJ_FILE の設定を確認してください。"
+        echo "  Check MODELS_DIR and MMPROJ_FILE settings."
+        exit 1
+    fi
+    MMPROJ_ARGS=(--mmproj "$MMPROJ_PATH")
+else
+    echo "  Mmproj    : (none — text-only mode)"
+fi
+
 echo "================================================"
 
 # モデルファイル確認 / Verify model file exists
 if [[ ! -f "$MODEL_PATH" ]]; then
-  echo "[ERROR] モデルファイルが見つかりません / Model file not found:"
-  echo "  $MODEL_PATH"
-  echo ""
-  echo "  MODELS_DIR を設定し /models にマウントしてください。"
-  echo "  Set MODELS_DIR and mount it to /models."
-  exit 1
+    echo "[ERROR] モデルファイルが見つかりません / Model file not found:"
+    echo "  $MODEL_PATH"
+    echo ""
+    echo "  MODELS_DIR を設定し /models にマウントしてください。"
+    echo "  Set MODELS_DIR and mount it to /models."
+    exit 1
 fi
 
 # GPU確認 / Check GPU
 echo ""
 echo "[GPU] nvidia-smi:"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null \
-  || echo "  (GPU情報取得失敗 / could not query GPU)"
+    || echo "  (GPU情報取得失敗 / could not query GPU)"
 echo ""
 
 # llama-server 起動 (フォアグラウンド) / Start in foreground so container lives with it
 echo "[llama] 起動中 / Starting llama-server..."
 exec "$LLAMA_BIN" \
-  --model               "$MODEL_PATH" \
-  --host                "0.0.0.0" \
-  --port                "$LLAMA_PORT" \
-  --ctx-size            "$CTX_SIZE" \
-  --n-predict           "$N_PREDICT" \
-  --n-gpu-layers        "$N_GPU_LAYERS" \
-  --parallel            "$N_PARALLEL" \
-  --temp                1.0 \
-  --top-p               1.0 \
-  --top-k               20 \
-  --min-p               0.0 \
-  --presence-penalty    2.0 \
-  --repeat-penalty      1.0 \
-  --metrics \
-  --chat-template-kwargs '{"enable_thinking": false}'
+    --model               "$MODEL_PATH" \
+    --host                "0.0.0.0" \
+    --port                "$LLAMA_PORT" \
+    --ctx-size            "$CTX_SIZE" \
+    --n-predict           "$N_PREDICT" \
+    --n-gpu-layers        "$N_GPU_LAYERS" \
+    --parallel            "$N_PARALLEL" \
+    --temp                1.0 \
+    --top-p               1.0 \
+    --top-k               20 \
+    --min-p               0.0 \
+    --presence-penalty    2.0 \
+    --repeat-penalty      1.0 \
+    --metrics \
+    --chat-template-kwargs '{"enable_thinking": false}' \
+    "${MMPROJ_ARGS[@]}"

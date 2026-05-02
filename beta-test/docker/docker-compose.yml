@@ -80,10 +80,13 @@ services:
       - ./supervisord.conf:/app/beta-test/docker/supervisord.conf:ro
       # バックエンド設定 (ホスト側編集可能) / Backend config — host-editable
       - ./backends.docker.yaml:/app/beta-test/docker/backends.docker.yaml:ro
+      # スクリプト (ホスト側編集可能、リビルド不要)
+      # Scripts — host-editable, no rebuild needed
+      - ./scripts:/app/beta-test/docker/scripts:ro
       # ログ永続化 / Persistent logs
       - llm-proxy-logs:/app/logs
 
-    command: /app/beta-test/docker/scripts/start.sh
+    command: bash /app/beta-test/docker/scripts/start.sh
 
     restart: unless-stopped
 
