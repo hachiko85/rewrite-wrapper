@@ -1,0 +1,18 @@
+# beta-test/docker/examples/backends.docker.yaml
+#
+# Qwen3.5-4B + Gemma-4-26B 同時稼働時のバックエンド設定例。
+# Backend config example for Qwen3.5-4B + Gemma-4-26B running simultaneously.
+#
+# 使い方 / Usage:
+#   cp beta-test/docker/examples/backends.docker.yaml beta-test/docker/backends.docker.yaml
+
+backends:
+  - name: qwen3.5-4b
+    url: http://localhost:8081
+    pathPrefix: /qwen3.5-4b
+    description: Qwen3.5-4B (unsloth UD-Q4_K_XL) — text only
+
+  - name: gemma-4-26b
+    url: http://localhost:8082
+    pathPrefix: /gemma-4-26b
+    description: Gemma-4-26B (unsloth UD-Q4_K_XL) — vision enabled

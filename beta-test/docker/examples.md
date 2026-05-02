@@ -1,166 +1,223 @@
-# β テスト Docker — 実装例 / Implementation Examples
+# β テスト Docker — 実装例と作業手順 / Implementation Examples & Workflow
 
-具体的なモデル構成と設定手順の実例集。  
-Concrete model configurations and step-by-step setup examples.
-
-> **前提**: `beta-test/docker/how_to_use.md` の初回セットアップ (イメージビルド) が完了していること。  
-> **Prerequisite**: Initial image build in `how_to_use.md` must be completed first.
+**このドキュメントについて / About this document**  
+リポジトリの `git clone` からモデルが動くまでの完全な手順を、  
+Qwen3.5-4B（テキスト）+ Gemma-4-26B（画像認識）の**2モデル同時稼働**を例に説明する。
 
 ---
 
-## 例1: Qwen3.5-4B (テキストのみ) / Example 1: Qwen3.5-4B (text-only)
+## 前提条件 / Prerequisites
 
-```
-ホスト側ファイル / Host file:
-  ~/gguf_models/unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-UD-Q4_K_XL.gguf
-```
+| 必要なもの | 確認コマンド |
+|-----------|-------------|
+| Docker Engine 24+ | `docker --version` |
+| Docker Compose v2+ | `docker compose version` |
+| NVIDIA Container Toolkit | `docker run --rm --gpus all ubuntu nvidia-smi` |
+| GGUF モデルファイル | `ls $HOME/gguf_models/` |
+| MongoDB 稼働中 | `mongosh --eval "db.adminCommand('ping')"` |
 
-### supervisord.conf
+> NVIDIA Container Toolkit のセットアップ方法は `how_to_use.md` の末尾を参照。
 
-```ini
-[program:llm-qwen4b]
-command=bash /app/beta-test/docker/scripts/llama-entrypoint.sh
-environment=MODEL_FILE="unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-UD-Q4_K_XL.gguf",LLAMA_PORT="8081",N_PARALLEL="4",CTX_SIZE="8192",N_GPU_LAYERS="-1",N_PREDICT="512",LD_LIBRARY_PATH="/opt/llama/bin"
-autostart=true
-autorestart=true
-startretries=3
-startsecs=5
-stdout_logfile=/app/logs/llm-qwen4b.log
-stdout_logfile_maxbytes=20MB
-stdout_logfile_backups=2
-stderr_logfile=/app/logs/llm-qwen4b.log
-stderr_logfile_maxbytes=0
+---
+
+## ステップ 1: リポジトリをクローン / Clone the repository
+
+```bash
+git clone https://github.com/hachiko85/rewrite-wrapper.git
+cd rewrite-wrapper
 ```
 
-> **ポイント / Note**: `MODEL_FILE` は `MODELS_DIR` (`~/gguf_models`) からの相対パス。  
-> `unsloth/Qwen3.5-4B-GGUF/...` と書くだけでサブディレクトリ対応。
+---
 
-### backends.docker.yaml
+## ステップ 2: .env を作成 / Create .env
+
+プロジェクトルートに `.env` を作成する。MongoDB の認証情報と管理キーを設定する。
+
+```bash
+cat > .env << 'EOF'
+# MongoDB 接続URI (認証あり)
+# MongoDB connection URI (with auth)
+MONGO_URI=mongodb://username:password@localhost:27017/k9db?authSource=admin
+
+# MongoDB データベース・コレクション名
+MONGO_DB=k9db
+MONGO_COLLECTION=api_keys
+MONGO_LOGS_COLLECTION=completion_logs
+
+# wrapper が使う llama.cpp の URL (デフォルトのバックエンド)
+LLAMA_CPP_URL=http://localhost:8080
+
+# 管理用マスターキー (APIキー発行などに使用)
+MASTER_KEY=your-secret-master-key-here
+EOF
+```
+
+---
+
+## ステップ 3: モデルファイルを確認 / Verify model files
+
+この例で使うモデルファイルの配置を確認する。
+
+```bash
+# 期待するディレクトリ構成 / Expected layout
+ls $HOME/gguf_models/unsloth/Qwen3.5-4B-GGUF/
+# → Qwen3.5-4B-UD-Q4_K_XL.gguf
+
+ls $HOME/gguf_models/unsloth/gemma-4-26B-A4B-it-GGUF/
+# → gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf
+# → mmproj-BF16.gguf
+```
+
+```
+~/gguf_models/                         ← MODELS_DIR に設定するディレクトリ
+└── unsloth/
+    ├── Qwen3.5-4B-GGUF/
+    │   └── Qwen3.5-4B-UD-Q4_K_XL.gguf
+    └── gemma-4-26B-A4B-it-GGUF/
+        ├── gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf
+        └── mmproj-BF16.gguf
+```
+
+---
+
+## ステップ 4: 設定ファイルを準備 / Prepare config files
+
+リポジトリに用意した例をコピーして使う。
+
+```bash
+# 例ファイルをコピー / Copy example files
+cp beta-test/docker/examples/supervisord.conf  beta-test/docker/supervisord.conf
+cp beta-test/docker/examples/backends.docker.yaml beta-test/docker/backends.docker.yaml
+```
+
+### supervisord.conf の内容（コピー済み）
+
+`beta-test/docker/supervisord.conf` には以下の3プロセスが定義される。
+
+| プロセス名 | モデル | ポート | 機能 |
+|-----------|--------|--------|------|
+| `llm-qwen4b` | Qwen3.5-4B | 8081 | テキスト生成 |
+| `llm-gemma26b` | Gemma-4-26B + mmproj | 8082 | テキスト + 画像認識 |
+| `wrapper` | Bun/Hono プロキシ | 3085 (外部公開) | 認証・ルーティング |
+
+**supervisord.conf が Docker にどう読まれるか / How Docker reads supervisord.conf**
+
+`docker-compose.yml` でホスト側ファイルをコンテナ内にマウントしている。
+
+```yaml
+# docker-compose.yml (抜粋)
+volumes:
+  - ./supervisord.conf:/app/beta-test/docker/supervisord.conf:ro
+```
+
+コンテナ起動時に `start.sh` → `supervisord -c /app/beta-test/docker/supervisord.conf` という流れで読み込まれる。  
+ファイルを編集→ `supervisorctl reread && update` だけでリビルドなしにプロセスを追加・変更できる。
+
+### backends.docker.yaml の内容（コピー済み）
+
+wrapper がリクエストをどのポートに転送するかを定義する。  
+`supervisord.conf` の `LLAMA_PORT` と対になっている。
 
 ```yaml
 backends:
   - name: qwen3.5-4b
-    url: http://localhost:8081
+    url: http://localhost:8081   # llm-qwen4b のポートと一致
     pathPrefix: /qwen3.5-4b
-    description: Qwen3.5-4B (unsloth UD-Q4_K_XL) — text only
+
+  - name: gemma-4-26b
+    url: http://localhost:8082   # llm-gemma26b のポートと一致
+    pathPrefix: /gemma-4-26b
 ```
 
-### 起動・確認 / Start & Verify
+---
+
+## ステップ 5: イメージをビルド / Build the image
+
+llama.cpp の CUDA コンパイルを含むため**15〜30分**かかる。  
+モデルファイルは含まれない（起動時にマウントされる）。
 
 ```bash
-# 初回ビルド (未実施の場合) / Initial build (if not done yet)
 export MODELS_DIR=$HOME/gguf_models
+
 docker compose -f beta-test/docker/docker-compose.yml build
+```
 
-# 起動 / Start
+GPU アーキテクチャが RTX 5070 Ti 以外の場合:
+
+| GPU | CUDA_ARCH | コマンド例 |
+|-----|-----------|----------|
+| RTX 5070 Ti (Blackwell) | 120 | デフォルト (`build` のみ) |
+| RTX 4090 (Ada) | 89 | `CUDA_ARCH=89 docker compose ... build` |
+| RTX 3090 (Ampere) | 86 | `CUDA_ARCH=86 docker compose ... build` |
+
+---
+
+## ステップ 6: コンテナを起動 / Start the container
+
+```bash
+export MODELS_DIR=$HOME/gguf_models
+
+# バックグラウンドで起動 / Start in background
 docker compose -f beta-test/docker/docker-compose.yml up -d
+```
 
-# プロセス確認 / Check processes
+---
+
+## ステップ 7: 起動確認 / Verify startup
+
+3プロセス全てが `RUNNING` になるまで待つ（モデルサイズによって1〜3分かかる）。
+
+```bash
+# プロセス状態確認 / Check process status
 docker exec rewrite-wrapper-beta supervisorctl status
+```
 
-# 動作確認 / Verify
+期待される出力:
+```
+llm-gemma26b             RUNNING   pid 34, uptime 0:01:23
+llm-qwen4b               RUNNING   pid 35, uptime 0:01:23
+wrapper                  RUNNING   pid 36, uptime 0:01:23
+```
+
+```bash
+# ヘルスチェック / Health check
 curl http://localhost:3085/health
-curl -s http://localhost:3085/backends | jq .
 
-# 推論テスト / Inference test
+# バックエンド一覧 / List backends
+curl -s http://localhost:3085/backends | jq .
+```
+
+期待される出力:
+```json
+{
+  "backends": [
+    {"name": "qwen3.5-4b",  "url": "http://localhost:8081", "pathPrefix": "/qwen3.5-4b"},
+    {"name": "gemma-4-26b", "url": "http://localhost:8082", "pathPrefix": "/gemma-4-26b"}
+  ]
+}
+```
+
+---
+
+## ステップ 8: 推論テスト / Test inference
+
+### Qwen3.5-4B — テキスト生成
+
+```bash
 curl -s http://localhost:3085/qwen3.5-4b/v1/chat/completions \
   -H "Authorization: Bearer <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "qwen3.5-4b",
-    "messages": [{"role": "user", "content": "Hello!"}],
+    "messages": [{"role": "user", "content": "日本語で自己紹介してください。"}],
     "stream": false
-  }' | jq .
+  }' | jq .choices[0].message.content
 ```
 
----
-
-## 例2: Gemma-4-26B (画像認識 / Vision) / Example 2: Gemma-4-26B with mmproj
-
-```
-ホスト側ファイル / Host files:
-  ~/gguf_models/unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf
-  ~/gguf_models/unsloth/gemma-4-26B-A4B-it-GGUF/mmproj-BF16.gguf
-```
-
-### supervisord.conf
-
-```ini
-[program:llm-gemma26b]
-command=bash /app/beta-test/docker/scripts/llama-entrypoint.sh
-environment=MODEL_FILE="unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf",MMPROJ_FILE="unsloth/gemma-4-26B-A4B-it-GGUF/mmproj-BF16.gguf",LLAMA_PORT="8082",N_PARALLEL="2",CTX_SIZE="8192",N_GPU_LAYERS="-1",N_PREDICT="512",LD_LIBRARY_PATH="/opt/llama/bin"
-autostart=true
-autorestart=true
-startretries=3
-startsecs=10
-stdout_logfile=/app/logs/llm-gemma26b.log
-stdout_logfile_maxbytes=20MB
-stdout_logfile_backups=2
-stderr_logfile=/app/logs/llm-gemma26b.log
-stderr_logfile_maxbytes=0
-```
-
-> **ポイント / Notes**:
-> - `MMPROJ_FILE` を設定するだけで `--mmproj` フラグが自動付与される。  
->   Setting `MMPROJ_FILE` automatically adds the `--mmproj` flag to llama-server.
-> - 26B モデルは VRAM 使用量が大きいため `N_PARALLEL="2"` に抑えている。  
->   26B model consumes more VRAM, so `N_PARALLEL` is reduced to 2.
-> - モデルと mmproj は**同じディレクトリに置く**のが管理しやすい。  
->   Keeping model and mmproj in the same directory simplifies management.
-
-### backends.docker.yaml
-
-```yaml
-backends:
-  - name: qwen3.5-4b
-    url: http://localhost:8081
-    pathPrefix: /qwen3.5-4b
-    description: Qwen3.5-4B (unsloth UD-Q4_K_XL) — text only
-
-  - name: gemma-4-26b
-    url: http://localhost:8082
-    pathPrefix: /gemma-4-26b
-    description: Gemma-4-26B (unsloth UD-Q4_K_XL) — vision enabled
-```
-
-### 設定反映 (リビルド不要) / Apply config (no rebuild)
-
-`supervisord.conf` と `backends.docker.yaml` を編集した後:
+### Gemma-4-26B — 画像認識
 
 ```bash
-# 設定再読み込み / Reload config
-docker exec rewrite-wrapper-beta supervisorctl reread
-docker exec rewrite-wrapper-beta supervisorctl update
-
-# 新プロセス確認 / Check new process
-docker exec rewrite-wrapper-beta supervisorctl status
-
-# wrapper を再起動してバックエンド一覧を更新 / Restart wrapper to refresh backends
-docker exec rewrite-wrapper-beta supervisorctl restart wrapper
-```
-
-### 起動ログ確認 / Check startup logs
-
-```bash
-# mmproj が正しく読み込まれているか確認 / Verify mmproj is loaded
-docker exec rewrite-wrapper-beta tail -30 /app/logs/llm-gemma26b.log
-```
-
-正常時のログ出力例 / Expected log output:
-```
-================================================
- llama-server エントリーポイント / Entrypoint
-  Model     : /models/unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf
-  Port      : 8082
-  Slots     : 2
-  Mmproj    : /models/unsloth/gemma-4-26B-A4B-it-GGUF/mmproj-BF16.gguf
-================================================
-```
-
-### 画像推論テスト / Vision inference test
-
-```bash
-# Base64エンコードした画像を含むリクエスト / Request with Base64-encoded image
+# 画像を Base64 エンコード / Encode image to base64
 IMAGE_B64=$(base64 -w0 /path/to/your/image.jpg)
 
 curl -s http://localhost:3085/gemma-4-26b/v1/chat/completions \
@@ -176,161 +233,78 @@ curl -s http://localhost:3085/gemma-4-26b/v1/chat/completions \
       ]
     }],
     \"stream\": false
-  }" | jq .
+  }" | jq .choices[0].message.content
 ```
 
 ---
 
-## 両モデル同時稼働の構成全体 / Full config: both models running together
+## モデルの追加・変更 (リビルド不要) / Add / change models (no rebuild)
 
-### ディレクトリ構成 / Directory layout
+### モデルを追加する / Add a model
 
+1. `beta-test/docker/supervisord.conf` に `[program:llm-newmodel]` を追記
+2. `beta-test/docker/backends.docker.yaml` に対応エントリを追記
+3. コンテナに反映:
+
+```bash
+docker exec rewrite-wrapper-beta supervisorctl reread
+docker exec rewrite-wrapper-beta supervisorctl update
+docker exec rewrite-wrapper-beta supervisorctl restart wrapper
 ```
-~/gguf_models/
-└── unsloth/
-    ├── Qwen3.5-4B-GGUF/
-    │   └── Qwen3.5-4B-UD-Q4_K_XL.gguf
-    └── gemma-4-26B-A4B-it-GGUF/
-        ├── gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf
-        └── mmproj-BF16.gguf
+
+### モデルを一時停止する / Stop a model
+
+```bash
+docker exec rewrite-wrapper-beta supervisorctl stop llm-gemma26b
 ```
 
-### supervisord.conf (完全版) / (complete)
+### ログを確認する / Check logs
+
+```bash
+docker exec rewrite-wrapper-beta tail -f /app/logs/llm-gemma26b.log
+docker exec rewrite-wrapper-beta tail -f /app/logs/llm-qwen4b.log
+docker exec rewrite-wrapper-beta tail -f /app/logs/wrapper.log
+```
+
+---
+
+## VRAM 使用量の目安 / Approximate VRAM usage
+
+| モデル | VRAM |
+|--------|------|
+| Qwen3.5-4B (Q4_K_XL) | 約 2.8 GB |
+| Gemma-4-26B (Q4_K_XL) + mmproj-BF16 | 約 13 GB |
+| **合計 / Total** | **約 15.8 GB** |
+
+RTX 5070 Ti (16 GB) の場合ギリギリ収まる。  
+VRAM が不足する場合は `N_GPU_LAYERS` を下げて一部レイヤーを CPU に退避させる。
 
 ```ini
-[supervisord]
-nodaemon=true
-user=root
-logfile=/app/logs/supervisord.log
-logfile_maxbytes=10MB
-logfile_backups=3
-loglevel=info
-
-[unix_http_server]
-file=/var/run/supervisor.sock
-chmod=0700
-
-[supervisorctl]
-serverurl=unix:///var/run/supervisor.sock
-
-[rpcinterface:supervisor]
-supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
-
-[program:llm-qwen4b]
-command=bash /app/beta-test/docker/scripts/llama-entrypoint.sh
-environment=MODEL_FILE="unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-UD-Q4_K_XL.gguf",LLAMA_PORT="8081",N_PARALLEL="4",CTX_SIZE="8192",N_GPU_LAYERS="-1",N_PREDICT="512",LD_LIBRARY_PATH="/opt/llama/bin"
-autostart=true
-autorestart=true
-startretries=3
-startsecs=5
-stdout_logfile=/app/logs/llm-qwen4b.log
-stdout_logfile_maxbytes=20MB
-stdout_logfile_backups=2
-stderr_logfile=/app/logs/llm-qwen4b.log
-stderr_logfile_maxbytes=0
-
-[program:llm-gemma26b]
-command=bash /app/beta-test/docker/scripts/llama-entrypoint.sh
-environment=MODEL_FILE="unsloth/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf",MMPROJ_FILE="unsloth/gemma-4-26B-A4B-it-GGUF/mmproj-BF16.gguf",LLAMA_PORT="8082",N_PARALLEL="2",CTX_SIZE="8192",N_GPU_LAYERS="-1",N_PREDICT="512",LD_LIBRARY_PATH="/opt/llama/bin"
-autostart=true
-autorestart=true
-startretries=3
-startsecs=10
-stdout_logfile=/app/logs/llm-gemma26b.log
-stdout_logfile_maxbytes=20MB
-stdout_logfile_backups=2
-stderr_logfile=/app/logs/llm-gemma26b.log
-stderr_logfile_maxbytes=0
-
-[program:wrapper]
-command=bun run start
-directory=/app
-environment=MONGO_URI="%(ENV_MONGO_URI)s",MASTER_KEY="%(ENV_MASTER_KEY)s",BACKENDS_CONFIG="%(ENV_BACKENDS_CONFIG)s",PORT="%(ENV_PORT)s"
-autostart=true
-autorestart=true
-startretries=5
-startsecs=15
-stdout_logfile=/app/logs/wrapper.log
-stdout_logfile_maxbytes=20MB
-stdout_logfile_backups=2
-stderr_logfile=/app/logs/wrapper.log
-stderr_logfile_maxbytes=0
+; VRAM 不足時は N_GPU_LAYERS を調整 / Reduce if VRAM is insufficient
+environment=...,N_GPU_LAYERS="20"   ; -1 (全層) → 数値で上限指定
 ```
-
-### backends.docker.yaml (完全版) / (complete)
-
-```yaml
-backends:
-  - name: qwen3.5-4b
-    url: http://localhost:8081
-    pathPrefix: /qwen3.5-4b
-    description: Qwen3.5-4B (unsloth UD-Q4_K_XL) — text only
-
-  - name: gemma-4-26b
-    url: http://localhost:8082
-    pathPrefix: /gemma-4-26b
-    description: Gemma-4-26B (unsloth UD-Q4_K_XL) — vision enabled
-```
-
-### ビルドから起動まで / Build to launch
 
 ```bash
-# 1. モデルディレクトリを確認 / Check model directory
-ls ~/gguf_models/unsloth/Qwen3.5-4B-GGUF/
-ls ~/gguf_models/unsloth/gemma-4-26B-A4B-it-GGUF/
-
-# 2. supervisord.conf と backends.docker.yaml を上記の内容に更新
-#    Update supervisord.conf and backends.docker.yaml as shown above
-
-# 3. イメージビルド (初回または Dockerfile 変更時のみ)
-#    Build image (only on first time or Dockerfile change)
-export MODELS_DIR=$HOME/gguf_models
-docker compose -f beta-test/docker/docker-compose.yml build
-
-# 4. 起動 / Start
-docker compose -f beta-test/docker/docker-compose.yml up -d
-
-# 5. 全プロセス確認 / Check all processes
-docker exec rewrite-wrapper-beta supervisorctl status
-# 期待される出力 / Expected output:
-#   llm-gemma26b    RUNNING   pid ...
-#   llm-qwen4b      RUNNING   pid ...
-#   wrapper         RUNNING   pid ...
-
-# 6. エンドポイント確認 / Verify endpoints
-curl http://localhost:3085/health
-curl -s http://localhost:3085/backends | jq .
-```
-
----
-
-## MODELS_DIR の使い方まとめ / MODELS_DIR path mapping
-
-`MODELS_DIR` はコンテナ内の `/models` にマウントされる。  
-`MODEL_FILE` / `MMPROJ_FILE` は `/models/` からの**相対パス**で指定する。
-
-| ホストのファイルパス | MODELS_DIR | MODEL_FILE |
-|---------------------|-----------|------------|
-| `~/gguf_models/unsloth/Model.gguf` | `$HOME/gguf_models` | `"unsloth/Model.gguf"` |
-| `~/gguf_models/unsloth/Model.gguf` | `$HOME/gguf_models/unsloth` | `"Model.gguf"` |
-| `~/models/Model.gguf` | `$HOME/models` | `"Model.gguf"` |
-
-どちらの `MODELS_DIR` でも動作する。モデルが複数ディレクトリにまたがる場合は上位ディレクトリを `MODELS_DIR` に設定するのが便利。
-
----
-
-## トラブルシューティング / Troubleshooting
-
-```bash
-# モデルが見つからない場合 / Model not found
-docker exec rewrite-wrapper-beta ls /models/unsloth/
-
-# mmproj が見つからない場合 / mmproj not found
-docker exec rewrite-wrapper-beta ls /models/unsloth/gemma-4-26B-A4B-it-GGUF/
-
-# プロセスが FATAL になった場合 / Process is FATAL
-docker exec rewrite-wrapper-beta tail -50 /app/logs/llm-gemma26b.log
-
-# GPU メモリ確認 / Check GPU memory
+# VRAM 使用量確認 / Check VRAM usage
 docker exec rewrite-wrapper-beta nvidia-smi
+```
+
+---
+
+## ファイル構成まとめ / File layout summary
+
+```
+beta-test/docker/
+├── Dockerfile.beta          # イメージ定義 (llama.cpp CUDA ビルド含む)
+├── docker-compose.yml       # コンテナ起動設定
+├── supervisord.conf         # ← ここを編集してモデルを追加・変更する
+├── backends.docker.yaml     # ← ここを編集してルーティングを変える
+├── scripts/
+│   ├── start.sh             # コンテナ起動スクリプト
+│   └── llama-entrypoint.sh  # llama-server 起動スクリプト (MMPROJ_FILE対応)
+├── examples/
+│   ├── supervisord.conf     # この例で使った設定ファイル (コピー元)
+│   └── backends.docker.yaml # この例で使った設定ファイル (コピー元)
+├── examples.md              # このファイル
+└── how_to_use.md            # 詳細リファレンス
 ```
