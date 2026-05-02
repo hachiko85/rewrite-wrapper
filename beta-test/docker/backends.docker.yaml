@@ -1,0 +1,20 @@
+# beta-test/docker/backends.docker.yaml
+# 単一コンテナ内用バックエンド設定。
+# Backend configuration for single-container environment.
+#
+# 全サービスが同じコンテナ内で動作するため localhost で接続する。
+# All services run in the same container, so localhost URLs are used.
+#
+# モデル追加時はこのファイルと supervisord.conf の両方を更新する。
+# When adding a model, update both this file AND supervisord.conf.
+
+backends:
+  - name: qwen3.5-4b
+    url: http://localhost:8081
+    pathPrefix: /qwen3.5-4b
+    description: Qwen3.5-4B (UD-Q4_K_XL)
+
+  - name: qwen3.5-0.8b
+    url: http://localhost:8082
+    pathPrefix: /qwen3.5-0.8b
+    description: Qwen3.5-0.8B (UD-Q4_K_XL)

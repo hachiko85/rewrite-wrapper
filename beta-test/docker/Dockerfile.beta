@@ -1,0 +1,116 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# beta-test/docker/Dockerfile.beta
+#
+# コンテナ内で llama.cpp を CUDA サポート付きでフルビルドする。
+# Builds llama.cpp with CUDA support fully inside the container.
+# ホスト側のバイナリやライブラリには依存しない。
+# Does NOT depend on any host-side binaries or libraries.
+#
+# ビルド引数 / Build args:
+#   CUDA_ARCH  : CUDAアーキテクチャ (default: 120 = RTX 5070 Ti / Blackwell)
+#                CUDA architecture target.
+#                Ada (RTX 4090) = 89, Ampere (RTX 3090) = 86, Turing = 75
+#
+# ビルド / Build:
+#   docker compose -f beta-test/docker/docker-compose.yml build
+#
+# アーキテクチャ指定ビルド / Build with explicit architecture:
+#   CUDA_ARCH=89 docker compose -f beta-test/docker/docker-compose.yml build
+# ──────────────────────────────────────────────────────────────────────────────
+
+FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
+
+# CUDAアーキテクチャ引数 (デフォルト: 120 = RTX 5070 Ti Blackwell)
+# CUDA architecture argument (default: 120 = RTX 5070 Ti Blackwell)
+ARG CUDA_ARCH=120
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    APP_DIR=/app \
+    PATH="/root/.bun/bin:$PATH"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OS パッケージ / OS packages
+# ビルドツール (cmake, g++, git) + ランタイム (libgomp1, supervisor, bun依存)
+# Build tools (cmake, g++, git) + runtime (libgomp1, supervisor, bun deps)
+# ──────────────────────────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    ca-certificates \
+    curl \
+    unzip \
+    libgomp1 \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CUDA ドライバースタブ symlink / CUDA driver stub symlink
+#
+# Docker ビルド時は GPU ドライバーが注入されず libcuda.so.1 が存在しない。
+# During Docker build, the GPU driver is not injected — libcuda.so.1 is absent.
+# nvidia/cuda:devel イメージは /usr/local/cuda/lib64/stubs/libcuda.so (バージョンなし) を提供する。
+# The devel image provides /usr/local/cuda/lib64/stubs/libcuda.so (no version suffix).
+# リンク時用に versioned symlink を作成し、ビルド後に削除する。
+# Create a versioned symlink for link-time resolution; remove it after build.
+# ランタイム時は NVIDIA Container Toolkit が本物の libcuda.so.1 を注入する。
+# At runtime, the NVIDIA Container Toolkit injects the real libcuda.so.1.
+# ──────────────────────────────────────────────────────────────────────────────
+RUN ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
+
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH:-}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# llama.cpp ビルド / Build llama.cpp
+#
+# ビルド成果物は /opt/llama/bin/ に収める。
+#   /opt/llama/bin/llama-server  — メインバイナリ
+#   /opt/llama/bin/libggml*.so*  — ggml共有ライブラリ
+#   /opt/llama/bin/libllama*.so* — llama共有ライブラリ
+#
+# Build output is placed in /opt/llama/bin/.
+#   /opt/llama/bin/llama-server  — main binary
+#   /opt/llama/bin/libggml*.so*  — ggml shared libraries
+#   /opt/llama/bin/libllama*.so* — llama shared libraries
+#
+# LD_LIBRARY_PATH=/opt/llama/bin でバイナリが共有ライブラリを探す。
+# Binary finds shared libraries via LD_LIBRARY_PATH=/opt/llama/bin.
+# ──────────────────────────────────────────────────────────────────────────────
+RUN git clone --depth=1 https://github.com/ggml-org/llama.cpp /tmp/llama.cpp && \
+    cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build \
+        -DGGML_CUDA=ON \
+        -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCH}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_EXE_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs" \
+        -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs" && \
+    cmake --build /tmp/llama.cpp/build --target llama-server -j$(nproc) && \
+    mkdir -p /opt/llama/bin && \
+    cp -r /tmp/llama.cpp/build/bin/. /opt/llama/bin/ && \
+    rm -rf /tmp/llama.cpp && \
+    # ビルド後にスタブ symlink を削除 / Remove stub symlink after build
+    rm -f /usr/local/cuda/lib64/stubs/libcuda.so.1
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Bun インストール / Install Bun (JavaScript/TypeScript runtime)
+# ──────────────────────────────────────────────────────────────────────────────
+RUN curl -fsSL https://bun.sh/install | bash && \
+    ln -sf /root/.bun/bin/bun /usr/local/bin/bun
+
+# ──────────────────────────────────────────────────────────────────────────────
+# アプリケーション / Application
+# ──────────────────────────────────────────────────────────────────────────────
+WORKDIR $APP_DIR
+
+# 依存関係インストール (package.json が変わらない限りキャッシュ有効)
+# Install dependencies (layer cached as long as package.json is unchanged)
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile
+
+# ソースコードをコピー / Copy application source
+COPY . .
+
+# スクリプトに実行権限を付与 / Make scripts executable
+RUN find /app/beta-test/docker/scripts -name "*.sh" -exec chmod +x {} \;
+
+# デフォルトはインタラクティブシェル / Default: interactive shell
+CMD ["/bin/bash"]

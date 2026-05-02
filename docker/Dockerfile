@@ -84,7 +84,8 @@ COPY . .
 RUN mkdir -p /models /app/logs
 
 # スクリプトに実行権限を付与 / Make scripts executable
-RUN chmod +x /app/docker/scripts/*.sh
+RUN chmod +x /app/docker/scripts/*.sh && \
+    chmod +x /app/beta-test/docker/scripts/*.sh
 
 # モデルファイルはホストからマウント / Model files are mounted from host
 VOLUME ["/models"]

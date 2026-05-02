@@ -1,0 +1,93 @@
+# beta-test/docker/docker-compose.yml
+# βテスト用単一コンテナ Docker Compose 構成。
+# Single-container Docker Compose configuration for beta testing.
+#
+# 構成 / Architecture:
+#   [外部:3085] → wrapper(3000) → llm-4b(8081)   ┐ 全て同一コンテナ内
+#                              → llm-0-8b(8082) ┘ All in one container
+#   llama.cpp: コンテナ内でCUDAフルビルド済み / Built with CUDA inside container
+#   MongoDB: ホスト側の既存インスタンスに直接接続 / Connects to host's MongoDB directly
+#
+# ビルド / Build:
+#   export MODELS_DIR=$HOME/gguf_models
+#   docker compose -f beta-test/docker/docker-compose.yml build
+#
+# 起動 / Start:
+#   docker compose -f beta-test/docker/docker-compose.yml up -d
+#
+# プロセス操作 / Process control (without rebuild):
+#   docker exec rewrite-wrapper-beta supervisorctl status
+#   docker exec rewrite-wrapper-beta supervisorctl stop llm-4b
+#   docker exec rewrite-wrapper-beta supervisorctl start llm-4b
+#   docker exec rewrite-wrapper-beta supervisorctl restart wrapper
+#
+# モデル追加 / Add a model (no rebuild required):
+#   1. supervisord.conf に [program:llm-newmodel] を追記
+#   2. backends.docker.yaml にエントリ追記
+#   3. docker exec rewrite-wrapper-beta supervisorctl reread
+#   4. docker exec rewrite-wrapper-beta supervisorctl update
+#   5. docker exec rewrite-wrapper-beta supervisorctl restart wrapper
+
+services:
+  llm-proxy:
+    build:
+      context: ../..                              # プロジェクトルート / Project root
+      dockerfile: beta-test/docker/Dockerfile.beta
+      args:
+        # CUDAアーキテクチャ (デフォルト: 120 = RTX 5070 Ti / Blackwell)
+        # CUDA architecture (default: 120 = RTX 5070 Ti / Blackwell)
+        # Ada (RTX 4090) = 89, Ampere (RTX 3090) = 86
+        CUDA_ARCH: "${CUDA_ARCH:-120}"
+    image: rewrite-wrapper-beta:latest
+    container_name: rewrite-wrapper-beta
+
+    # ── GPU パススルー / GPU passthrough ──
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # ── ホストネットワーク共有 / Host network mode ──
+    # コンテナがホストのネットワーク空間を共有する。
+    # ホストの localhost:27017 (MongoDB) に直接接続可能。
+    # Container shares host network stack.
+    # Allows direct connection to host's localhost:27017 (MongoDB).
+    # ポートマッピングは不要 — wrapper がホスト上のポート 3085 で直接リッスン。
+    # No port mapping needed — wrapper listens directly on host port 3085.
+    network_mode: host
+
+    # ── 環境変数 / Environment variables ──
+    env_file:
+      - ../../.env                    # MONGO_URI, MASTER_KEY など / etc.
+    environment:
+      # Docker内バックエンド設定ファイル / Docker-specific backends config
+      BACKENDS_CONFIG: /app/beta-test/docker/backends.docker.yaml
+      # ホストネットワークモードではポートマッピングがないためPORTを直接指定
+      # With host network mode, set PORT directly (no mapping)
+      PORT: "${WRAPPER_PORT:-3085}"
+
+    # ── ボリュームマウント / Volume mounts ──
+    volumes:
+      # モデルファイル (読み取り専用) / Model files (read-only)
+      # llama.cpp バイナリはコンテナ内ビルド済みのためマウント不要
+      # llama.cpp binary is built inside the image — no host mount needed
+      - ${MODELS_DIR:-/tmp/models}:/models:ro
+      # supervisord設定 (ホスト側編集でモデル追加・削除可能、リビルド不要)
+      # supervisord config — edit on host to add/remove models (no rebuild needed)
+      - ./supervisord.conf:/app/beta-test/docker/supervisord.conf:ro
+      # バックエンド設定 (ホスト側編集可能) / Backend config — host-editable
+      - ./backends.docker.yaml:/app/beta-test/docker/backends.docker.yaml:ro
+      # ログ永続化 / Persistent logs
+      - llm-proxy-logs:/app/logs
+
+    command: /app/beta-test/docker/scripts/start.sh
+
+    restart: unless-stopped
+
+# ── 名前付きボリューム / Named volumes ──
+volumes:
+  llm-proxy-logs:
+    driver: local
