@@ -1,0 +1,27 @@
+# beta-test/raw/backends.yaml
+# Qwen3.5-4B (テキスト) + Gemma-4-26B (画像認識) 同時稼働のバックエンド設定。
+# Backend config for Qwen3.5-4B (text) + Gemma-4-26B (vision) running simultaneously.
+#
+# パスプレフィックスでリクエストを各 llama-server へルーティングする。
+# Routes requests to each llama-server based on URL path prefix.
+#
+# リクエスト例 / Request examples:
+#   POST /qwen3.5-4b/v1/chat/completions   → http://localhost:8081
+#   POST /gemma-4-26b/v1/chat/completions  → http://localhost:8082
+#
+# 使い方 / Usage:
+#   .env に BACKENDS_CONFIG=./beta-test/raw/backends.yaml を設定するか、
+#   このファイルをプロジェクトルートの backends.yaml としてコピーする。
+#   Set BACKENDS_CONFIG=./beta-test/raw/backends.yaml in .env,
+#   or copy this file to the project root as backends.yaml.
+
+backends:
+  - name: qwen3.5-4b
+    url: http://localhost:8081
+    pathPrefix: /qwen3.5-4b
+    description: Qwen3.5-4B (unsloth UD-Q4_K_XL) — text only
+
+  - name: gemma-4-26b
+    url: http://localhost:8082
+    pathPrefix: /gemma-4-26b
+    description: Gemma-4-26B (unsloth UD-Q4_K_XL) — vision enabled
