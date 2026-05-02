@@ -83,6 +83,38 @@ export interface CompletionLogInput {
 }
 
 // ─────────────────────────────────────────────
+// カスタム /completion レスポンス / Custom /completion response
+// ─────────────────────────────────────────────
+
+/**
+ * /:prefix/completion 成功時の data フィールド
+ * Data field for successful /:prefix/completion response
+ */
+export interface CustomCompletionData {
+  /** 推論結果テキスト / Generated text output */
+  output: string;
+  /** 単位時間当たりのトークン生成数 / Tokens generated per second */
+  tps: number;
+  /** 出力トークン数 / Output token count */
+  tokens: number;
+  /** 推論時間 (秒) / Inference time in seconds */
+  inference_time: number;
+}
+
+/**
+ * /:prefix/completion のカスタムレスポンス型
+ * Custom response type for /:prefix/completion endpoint
+ */
+export interface CustomCompletionResponse {
+  /** 成功/失敗フラグ / Success or failure flag */
+  status: boolean;
+  /** 成功理由またはエラー理由 / Success or error message */
+  reason: string;
+  /** 成功時: 推論結果 / 失敗時: 空オブジェクト / Result on success, empty object on failure */
+  data: CustomCompletionData | Record<string, never>;
+}
+
+// ─────────────────────────────────────────────
 // バックエンド設定 / Backend configuration
 // ─────────────────────────────────────────────
 

@@ -18,6 +18,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { guardSlot } from "../middleware/slotGuard.js";
 import { BackendRegistry } from "../services/backendRegistry.js";
 import { StreamProxy } from "../proxy/streamProxy.js";
+import { CompletionProxy } from "../proxy/completionProxy.js";
 import { Errors } from "../utils/errorResponse.js";
 import type { ApiKeyDocument } from "../../../../shared/types/api.js";
 
@@ -31,6 +32,7 @@ type ProxyEnv = { Variables: { apiKeyDoc: ApiKeyDocument } };
 export function buildProxyRouter(): Hono<ProxyEnv> {
   const router = new Hono<ProxyEnv>();
   const proxy = new StreamProxy();
+  const completionProxy = new CompletionProxy();
   const registry = BackendRegistry.getInstance();
 
   // ── 認証ミドルウェアを全ルートに適用 / Apply auth middleware to all routes ──
@@ -58,6 +60,14 @@ export function buildProxyRouter(): Hono<ProxyEnv> {
 
     const { backend, strippedPath } = match;
 
+    // ── /:prefix/completion → カスタムレスポンス形式で返す ──
+    // Custom non-streaming endpoint that returns our own response schema:
+    //   { status: true/false, reason: "...", data: { output, tps, tokens, inference_time } }
+    if (strippedPath === "/completion") {
+      return completionProxy.forward(c, backend, c.get("apiKeyDoc"));
+    }
+
+    // ── 通常のストリームプロキシ / Standard stream proxy ──
     // このバックエンド専用のスロット確認 / Check slots for this backend
     const slotError = await guardSlot(backend.url, c);
     if (slotError) return slotError;
